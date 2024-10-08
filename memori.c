@@ -58,6 +58,16 @@ void Terminal_enableRawMode(void) {
     raw.c_lflag &= ~(ECHO | ICANON | ISIG | IEXTEN);
 
     /*
+        `c_cc` means `control characters`, an array of bytes that controls various 
+        terminal settings:
+            - `VMIN` sets the minimum number of bytes of input needed before `read()`
+            can return.
+            - `VTIME` sets the maximum amount of time to wait before `read()` returns.
+    */
+    raw.c_cc[VMIN] = 0;
+    raw.c_cc[VTIME] = 1;
+
+    /*
         Set the modified state to the terminal. Using the `TCSAFLUSH` action, 
         the modification is applied after all pending output to be written.
     */
@@ -67,8 +77,6 @@ void Terminal_enableRawMode(void) {
 int main(int argc, char **argv) {
     Terminal_enableRawMode();
 
-    char c;
-
     /* 
         Read 1 byte from standart input.
 
@@ -77,12 +85,17 @@ int main(int argc, char **argv) {
 
         Enter `q` to exit.
     */
-    while (read(STDIN_FILENO, &c, 1) == 1 && c != 'q') {
+    while(1) {
+        char c = '\0';
+        read(STDIN_FILENO, &c, 1);
+
         if (iscntrl(c)) {
             printf("%d\r\n", c);
         } else {
             printf("%d (%c)\r\n", c, c);
         }
+
+        if (c == 'q') break;
     }
 
     return 0;
