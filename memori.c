@@ -22,12 +22,16 @@ void Terminal_enableRawMode(void) {
     /* 
         `c_lflags` means `local flags` that describe other states:
             - `ECHO` flag say to print each key you type to the terminal.
+            - `ICANON` flag say to input be available line by line.
         
         To turn off some flag, you need to use bitwise operation. Just negate 
         the `ECHO` flag.
+
+        Now the terminal don't echo the each input character and can be read 
+        byte by byte instead of line by line.
     */
     struct termios raw = terminal;
-    raw.c_lflag &= ~(ECHO);
+    raw.c_lflag &= ~(ECHO | ICANON);
 
     /*
         Set the modified state to the terminal. Using the `TCSAFLUSH` action, 
