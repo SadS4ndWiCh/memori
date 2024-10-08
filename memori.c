@@ -9,10 +9,9 @@ int main(int argc, char **argv) {
         By default, the terminal starts in canonical mode (cooked mode), which 
         means that is required to press `ENTER` to send the input.
 
-        Until now, you need to press `CTRL-D` to send EOF or `CTRL-C` to 
-        terminate.
+        Enter `q` to exit.
     */
-    while (read(STDIN_FILENO, &c, 1) == 1);
+    while (read(STDIN_FILENO, &c, 1) == 1 && c != 'q');
 
     return 0;
 }
