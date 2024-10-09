@@ -1,5 +1,6 @@
 #include <ctype.h>
 #include <stdio.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <termios.h>
@@ -9,8 +10,15 @@
 */
 struct termios terminal;
 
+void Terminal_die(const char *message) {
+    perror(message);
+    exit(1);
+}
+
 void Terminal_disableRawMode(void) {
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal);
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal) == -1) {
+        Terminal_die("tcsetattr");
+    }
 }
 
 void Terminal_enableRawMode(void) {
@@ -21,7 +29,9 @@ void Terminal_enableRawMode(void) {
         To restore to initial state, we call the `Terminal_disableRawMode` when 
         `exit` is called.
     */
-    tcgetattr(STDIN_FILENO, &terminal);
+    if (tcgetattr(STDIN_FILENO, &terminal) == -1) {
+        Terminal_die("tcgetattr");
+    }
     atexit(Terminal_disableRawMode);
 
     /* 
@@ -71,7 +81,9 @@ void Terminal_enableRawMode(void) {
         Set the modified state to the terminal. Using the `TCSAFLUSH` action, 
         the modification is applied after all pending output to be written.
     */
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) {
+        Terminal_die("tcsetattr");
+    }
 }
 
 int main(int argc, char **argv) {
@@ -87,7 +99,10 @@ int main(int argc, char **argv) {
     */
     while(1) {
         char c = '\0';
-        read(STDIN_FILENO, &c, 1);
+
+        if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) {
+            Terminal_die("read");
+        }
 
         if (iscntrl(c)) {
             printf("%d\r\n", c);
