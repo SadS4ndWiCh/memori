@@ -5,12 +5,17 @@
 #include <unistd.h>
 #include <termios.h>
 
+#define CTRL_KEY(k) ((k) & 0x1f)
+
 /* 
     Global original terminal state.
 */
 struct termios terminal;
 
 void Terminal_die(const char *message) {
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
+
     perror(message);
     exit(1);
 }
@@ -86,31 +91,57 @@ void Terminal_enableRawMode(void) {
     }
 }
 
+char Terminal_readKey(void) {
+    int nread;
+    char c;
+
+    while ((nread = read(STDIN_FILENO, &c, 1)) == 1) {
+        if (nread == - 1 && errno != EAGAIN) {
+            Terminal_die("read");
+        }
+    }
+
+    return c;
+}
+
+void Editor_processKey(void) {
+    char c = Terminal_readKey();
+
+    switch (c) {
+    case CTRL_KEY('q'):
+        write(STDOUT_FILENO, "\x1b[2J", 4);
+        write(STDOUT_FILENO, "\x1b[H", 3);
+
+        exit(0);
+        break;
+    }
+}
+
+/*
+    Refresh the screen on every render.
+
+    To refresh the screen we use `scape sequences`, which is a sequence of bytes 
+    starting with `\x1b` (27 in decimal) followed by a `[` character and the command.
+
+    - `Erase in Display` -> erase(option) -> `\x1b[<option>J`:
+        If `option` is 0, the screen would be cleaned from the cursor up to the 
+        end of screen. If `option` is 1, the screen would be cleaned up to where 
+        the cursor is. If `option` is 2, the entire screen would be cleaned.
+    
+    - `Cursor Position` -> position(row, col) -> `\x1b[<row>;<col>H`:
+        The cursor position is set to coord `col`x`row`.
+*/
+void Editor_refreshScreen(void) {
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
+}
+
 int main(int argc, char **argv) {
     Terminal_enableRawMode();
 
-    /* 
-        Read 1 byte from standart input.
-
-        By default, the terminal starts in canonical mode (cooked mode), which 
-        means that is required to press `ENTER` to send the input.
-
-        Enter `q` to exit.
-    */
     while(1) {
-        char c = '\0';
-
-        if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) {
-            Terminal_die("read");
-        }
-
-        if (iscntrl(c)) {
-            printf("%d\r\n", c);
-        } else {
-            printf("%d (%c)\r\n", c, c);
-        }
-
-        if (c == 'q') break;
+        Editor_refreshScreen();
+        Editor_processKey();
     }
 
     return 0;
