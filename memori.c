@@ -7,6 +7,8 @@
 #include <termios.h>
 #include <sys/ioctl.h>
 
+#define MEMORI_VERSION "0.0.1"
+
 #define CTRL_KEY(k) ((k) & 0x1f)
 
 /* Global editor configurations */
@@ -195,7 +197,26 @@ void Editor_processKey(void) {
 
 void Editor_drawRows(struct AppendBuffer *ab) {
     for (int y = 0; y < editorConfig.screenRows; y++) {
-        AppendBuffer_append(ab, "~", 1);
+        if (y == editorConfig.screenRows / 3) {
+            char welcome[80];
+            int welcomeLen = snprintf(welcome, sizeof(welcome), "Memori editor -- version %s", MEMORI_VERSION);
+
+            if (welcomeLen > editorConfig.screenCols) {
+                welcomeLen = editorConfig.screenCols;
+            }
+
+            int padding = (editorConfig.screenCols - welcomeLen) / 2;
+            if (padding) {
+                AppendBuffer_append(ab, "~", 1);
+                padding--;
+            }
+
+            while (padding--) AppendBuffer_append(ab, " ", 1);
+
+            AppendBuffer_append(ab, welcome, welcomeLen);
+        } else {
+            AppendBuffer_append(ab, "~", 1);
+        }
 
         // The `K` (Erase In Line) escape sequence. With default argument (0), 
         // it erase the whole line after cursor
