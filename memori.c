@@ -4,13 +4,20 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <termios.h>
+#include <sys/ioctl.h>
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
-/* 
-    Global original terminal state.
-*/
-struct termios terminal;
+/* Global editor configurations */
+struct EditorConfig {
+    int screenRows;
+    int screenCols;
+
+    /* Original terminal state. */
+    struct termios terminal;
+};
+
+struct EditorConfig editorConfig;
 
 void Terminal_die(const char *message) {
     write(STDOUT_FILENO, "\x1b[2J", 4);
@@ -21,7 +28,7 @@ void Terminal_die(const char *message) {
 }
 
 void Terminal_disableRawMode(void) {
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal) == -1) {
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &editorConfig.terminal) == -1) {
         Terminal_die("tcsetattr");
     }
 }
@@ -34,7 +41,7 @@ void Terminal_enableRawMode(void) {
         To restore to initial state, we call the `Terminal_disableRawMode` when 
         `exit` is called.
     */
-    if (tcgetattr(STDIN_FILENO, &terminal) == -1) {
+    if (tcgetattr(STDIN_FILENO, &editorConfig.terminal) == -1) {
         Terminal_die("tcgetattr");
     }
     atexit(Terminal_disableRawMode);
@@ -66,7 +73,7 @@ void Terminal_enableRawMode(void) {
         
         To turn off some flag, you need to use bitwise operation.
     */
-    struct termios raw = terminal;
+    struct termios raw = editorConfig.terminal;
     raw.c_oflag &= ~(OPOST);
     raw.c_cflag |= (CS8);
     raw.c_iflag &= ~(IXON | ICRNL | BRKINT | INPCK | ISTRIP);
@@ -104,6 +111,54 @@ char Terminal_readKey(void) {
     return c;
 }
 
+int Terminal_getCursorPosition(int *rows, int *cols) {
+    char buf[32];
+    unsigned int i = 0;
+
+    if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) {
+        return -1;
+    }
+
+    while (i < sizeof(buf) - 1) {
+        if (read(STDIN_FILENO, &buf[i], 1) != 1) break;
+        if (buf[i] == 'R') break;
+        i++;
+    }
+    buf[i] = '\0';
+
+    if (buf[0] != '\x1b' || buf[1] != '[') return -1;
+    if (sscanf(&buf[2], "%d;%d", rows, cols) != 2) return -1;
+
+    return 0;
+}
+
+/*
+    Get the terminal window size.
+
+    To get the terminal window size, a simple way is to use `ioctl()` with the 
+    `TIOCGWINSZ` request. It returns a struct with `ws_row` and `ws_col`.
+
+    Because this method doesn't work in some systems, as fallback, is just to use
+    the cursor position. To do that, set the cursor position to the end of 
+    row and col, with `C` escape sequence (Cursor Forward) and `B` escape sequence 
+    (Cursor Down), and then is just get the current position.
+*/
+int Terminal_getWindowSize(int *rows, int *cols) {
+    struct winsize ws;
+
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
+        if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12) {
+            return -1;
+        }
+
+        return Terminal_getCursorPosition(rows, cols);
+    }
+
+    *rows = ws.ws_row;
+    *cols = ws.ws_col;
+    return 0;
+}
+
 void Editor_processKey(void) {
     char c = Terminal_readKey();
 
@@ -118,7 +173,7 @@ void Editor_processKey(void) {
 }
 
 void Editor_drawRows(void) {
-    for (int y = 0; y < 24; y++) {
+    for (int y = 0; y < editorConfig.screenRows; y++) {
         write(STDIN_FILENO, "~\r\n", 3);
     }
 }
@@ -147,8 +202,15 @@ void Editor_refreshScreen(void) {
     write(STDOUT_FILENO, "\x1b[H", 3);
 }
 
+void Editor_init(void) {
+    if (Terminal_getWindowSize(&editorConfig.screenRows, &editorConfig.screenCols) == -1) {
+        Terminal_die("getWindowSize");
+    }
+}
+
 int main(int argc, char **argv) {
     Terminal_enableRawMode();
+    Editor_init();
 
     while(1) {
         Editor_refreshScreen();
