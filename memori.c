@@ -197,6 +197,9 @@ void Editor_drawRows(struct AppendBuffer *ab) {
     for (int y = 0; y < editorConfig.screenRows; y++) {
         AppendBuffer_append(ab, "~", 1);
 
+        // The `K` (Erase In Line) escape sequence. With default argument (0), 
+        // it erase the whole line after cursor
+        AppendBuffer_append(ab, "\x1b[K", 3);
         if (y < editorConfig.screenRows - 1) {
             AppendBuffer_append(ab, "\r\n", 2);
         }
@@ -206,27 +209,23 @@ void Editor_drawRows(struct AppendBuffer *ab) {
 /*
     Refresh the screen on every render.
 
-    To refresh the screen we use `scape sequences`, which is a sequence of bytes 
-    starting with `\x1b` (27 in decimal) followed by a `[` character and the command.
+    The refresh steps are:
 
-    - `Erase in Display` -> erase(option) -> `\x1b[<option>J`:
-        If `option` is 0, the screen would be cleaned from the cursor up to the 
-        end of screen. If `option` is 1, the screen would be cleaned up to where 
-        the cursor is. If `option` is 2, the entire screen would be cleaned.
-    
-    - `Cursor Position` -> position(row, col) -> `\x1b[<row>;<col>H`:
-        The cursor position is set to coord `col`x`row`. Note: `row` and `col` 
-        starts from 1.
+    1. it hides the cursor with the `l` (Set Mode) espace sequence and 
+    set cursor position to the top;
+    2. Draw all rows;
+    3. Go back to the top and shows the cursor with `h` (Reset Mode) escape sequence.
 */
 void Editor_refreshScreen(void) {
     struct AppendBuffer ab = APPEND_BUFFER_INIT;
 
-    AppendBuffer_append(&ab, "\x1b[2J", 4);
+    AppendBuffer_append(&ab, "\x1b[?25l", 6);
     AppendBuffer_append(&ab, "\x1b[H", 3);
 
     Editor_drawRows(&ab);
 
     AppendBuffer_append(&ab, "\x1b[H", 3);
+    AppendBuffer_append(&ab, "\x1b[?25h", 6);
 
     write(STDOUT_FILENO, ab.buf, ab.len);
     AppendBuffer_free(&ab);
