@@ -117,6 +117,12 @@ void Editor_processKey(void) {
     }
 }
 
+void Editor_drawRows(void) {
+    for (int y = 0; y < 24; y++) {
+        write(STDIN_FILENO, "~\r\n", 3);
+    }
+}
+
 /*
     Refresh the screen on every render.
 
@@ -129,10 +135,15 @@ void Editor_processKey(void) {
         the cursor is. If `option` is 2, the entire screen would be cleaned.
     
     - `Cursor Position` -> position(row, col) -> `\x1b[<row>;<col>H`:
-        The cursor position is set to coord `col`x`row`.
+        The cursor position is set to coord `col`x`row`. Note: `row` and `col` 
+        starts from 1.
 */
 void Editor_refreshScreen(void) {
     write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
+
+    Editor_drawRows();
+
     write(STDOUT_FILENO, "\x1b[H", 3);
 }
 
