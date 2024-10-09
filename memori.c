@@ -1,6 +1,7 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <errno.h>
+#include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <termios.h>
@@ -159,6 +160,26 @@ int Terminal_getWindowSize(int *rows, int *cols) {
     return 0;
 }
 
+struct AppendBuffer {
+    char *buf;
+    int len;
+};
+
+#define APPEND_BUFFER_INIT {NULL, 0}
+
+void AppendBuffer_append(struct AppendBuffer *ab, const char *s, int len) {
+    char *new = realloc(ab->buf, ab->len + len);
+    if (!new) return;
+
+    memcpy(&new[ab->len], s, len);
+    ab->buf = new;
+    ab->len += len;
+}
+
+void AppendBuffer_free(struct AppendBuffer *ab) {
+    free(ab->buf);
+}
+
 void Editor_processKey(void) {
     char c = Terminal_readKey();
 
@@ -172,9 +193,13 @@ void Editor_processKey(void) {
     }
 }
 
-void Editor_drawRows(void) {
+void Editor_drawRows(struct AppendBuffer *ab) {
     for (int y = 0; y < editorConfig.screenRows; y++) {
-        write(STDIN_FILENO, "~\r\n", 3);
+        AppendBuffer_append(ab, "~", 1);
+
+        if (y < editorConfig.screenRows - 1) {
+            AppendBuffer_append(ab, "\r\n", 2);
+        }
     }
 }
 
@@ -194,12 +219,17 @@ void Editor_drawRows(void) {
         starts from 1.
 */
 void Editor_refreshScreen(void) {
-    write(STDOUT_FILENO, "\x1b[2J", 4);
-    write(STDOUT_FILENO, "\x1b[H", 3);
+    struct AppendBuffer ab = APPEND_BUFFER_INIT;
 
-    Editor_drawRows();
+    AppendBuffer_append(&ab, "\x1b[2J", 4);
+    AppendBuffer_append(&ab, "\x1b[H", 3);
 
-    write(STDOUT_FILENO, "\x1b[H", 3);
+    Editor_drawRows(&ab);
+
+    AppendBuffer_append(&ab, "\x1b[H", 3);
+
+    write(STDOUT_FILENO, ab.buf, ab.len);
+    AppendBuffer_free(&ab);
 }
 
 void Editor_init(void) {
