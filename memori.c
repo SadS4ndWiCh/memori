@@ -11,8 +11,22 @@
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
+enum EditorKey {
+    ARROW_LEFT = 1000,
+    ARROW_RIGHT,
+    ARROW_UP,
+    ARROW_DOWN,
+    PAGE_UP,
+    PAGE_DOWN,
+    HOME_KEY,
+    END_KEY,
+    DELETE_KEY
+};
+
 /* Global editor configurations */
 struct EditorConfig {
+    int cx, cy;
+
     int screenRows;
     int screenCols;
 
@@ -101,14 +115,64 @@ void Terminal_enableRawMode(void) {
     }
 }
 
-char Terminal_readKey(void) {
+int Terminal_readKey(void) {
     int nread;
     char c;
 
-    while ((nread = read(STDIN_FILENO, &c, 1)) == 1) {
-        if (nread == - 1 && errno != EAGAIN) {
+    while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
+        if (nread == -1 && errno != EAGAIN) {
             Terminal_die("read");
         }
+    }
+
+    if (c == '\x1b') {
+        char seq[3];
+
+        if (read(STDIN_FILENO, &seq[0], 1) != 1) return c;
+        if (read(STDIN_FILENO, &seq[1], 1) != 1) return c;
+
+        if (seq[0] == '[') {
+            if (seq[1] >= '0' && seq[1] <= '9') {
+                if (read(STDIN_FILENO, &seq[2], 1) != 1) return c;
+                if (seq[2] == '~') {
+                    switch (seq[1]) {
+                    case '1':
+                    case '7':
+                        return HOME_KEY;
+                    
+                    case '4':
+                    case '8':
+                        return END_KEY;
+
+                    case '2':
+                    case '5':
+                        return PAGE_UP;
+
+                    case '6':
+                        return PAGE_DOWN;
+
+                    case '3':
+                        return DELETE_KEY;
+                    }
+                }
+            }
+
+            switch (seq[1]) {
+            case 'A': return ARROW_UP;
+            case 'B': return ARROW_DOWN;
+            case 'C': return ARROW_RIGHT;
+            case 'D': return ARROW_LEFT;
+            case 'H': return HOME_KEY;
+            case 'F': return END_KEY;
+            }
+        } else if (seq[0] == 'O') {
+            switch (seq[1]) {
+            case 'H': return HOME_KEY;
+            case 'F': return END_KEY;
+            }
+        }
+
+        return c;
     }
 
     return c;
@@ -182,15 +246,65 @@ void AppendBuffer_free(struct AppendBuffer *ab) {
     free(ab->buf);
 }
 
-void Editor_processKey(void) {
-    char c = Terminal_readKey();
+void Editor_processMoveCursor(int key) {
+    switch (key) {
+    case 'k':
+    case ARROW_UP:
+        if (editorConfig.cy > 0) editorConfig.cy--;
+        break;
+    case 'j':
+    case ARROW_DOWN:
+        if (editorConfig.cy < editorConfig.screenRows - 1) editorConfig.cy++;
+        break;
+    case 'l':
+    case ARROW_RIGHT:
+        if (editorConfig.cx < editorConfig.screenCols - 1) editorConfig.cx++;
+        break;
+    case 'h':
+    case ARROW_LEFT:
+        if (editorConfig.cx > 0) editorConfig.cx--;
+        break;
+    }
+}
 
-    switch (c) {
+void Editor_processKey(void) {
+    int key = Terminal_readKey();
+
+    switch (key) {
     case CTRL_KEY('q'):
         write(STDOUT_FILENO, "\x1b[2J", 4);
         write(STDOUT_FILENO, "\x1b[H", 3);
 
         exit(0);
+        break;
+
+    case PAGE_UP:
+    case PAGE_DOWN:
+        {
+            int times = editorConfig.screenRows;
+            while (times--) {
+                Editor_processMoveCursor(key == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+            }
+        }
+        break;
+    
+    case HOME_KEY:
+        editorConfig.cx = 0;
+        break;
+
+    case END_KEY:
+        editorConfig.cx = editorConfig.screenCols - 1;
+        break;
+
+    case 'k':
+    case 'j':
+    case 'l':
+    case 'h':
+    case ARROW_UP:
+    case ARROW_DOWN:
+    case ARROW_RIGHT:
+    case ARROW_LEFT:
+        Editor_processMoveCursor(key);
         break;
     }
 }
@@ -245,7 +359,10 @@ void Editor_refreshScreen(void) {
 
     Editor_drawRows(&ab);
 
-    AppendBuffer_append(&ab, "\x1b[H", 3);
+    char buf[32];
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", editorConfig.cy + 1, editorConfig.cx + 1);
+    AppendBuffer_append(&ab, buf, strlen(buf));
+
     AppendBuffer_append(&ab, "\x1b[?25h", 6);
 
     write(STDOUT_FILENO, ab.buf, ab.len);
@@ -253,6 +370,9 @@ void Editor_refreshScreen(void) {
 }
 
 void Editor_init(void) {
+    editorConfig.cx = 0;
+    editorConfig.cy = 0;
+
     if (Terminal_getWindowSize(&editorConfig.screenRows, &editorConfig.screenCols) == -1) {
         Terminal_die("getWindowSize");
     }
