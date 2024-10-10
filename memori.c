@@ -23,12 +23,21 @@ enum EditorKey {
     DELETE_KEY
 };
 
+/* Editor Row */
+typedef struct erow {
+    int size;
+    char *chars;
+} erow;
+
 /* Global editor configurations */
 struct EditorConfig {
     int cx, cy;
 
     int screenRows;
     int screenCols;
+
+    int numRows;
+    erow row;
 
     /* Original terminal state. */
     struct termios terminal;
@@ -246,6 +255,33 @@ void AppendBuffer_free(struct AppendBuffer *ab) {
     free(ab->buf);
 }
 
+/*
+    Open a file in the editor.
+*/
+void Editor_open(char *path) {
+    FILE *fp = fopen(path, "r");
+    if (!fp) Terminal_die("fopen");
+
+    char *line = NULL;
+    size_t linecap = 0;
+    ssize_t linelen = getline(&line, &linecap, fp);
+    if (linelen != -1) {
+        while (linelen > 0 && (line[linelen - 1] == '\r' || line[linelen - 1] == '\n')) {
+            linelen--;
+        }
+
+        editorConfig.row.size = linelen;
+        editorConfig.row.chars = (char *) malloc(linelen + 1);
+        memcpy(editorConfig.row.chars, line, linelen);
+
+        editorConfig.row.chars[linelen] = '\0';
+        editorConfig.numRows = 1;
+    }
+
+    free(line);
+    fclose(fp);
+}
+
 void Editor_processMoveCursor(int key) {
     switch (key) {
     case 'k':
@@ -311,7 +347,14 @@ void Editor_processKey(void) {
 
 void Editor_drawRows(struct AppendBuffer *ab) {
     for (int y = 0; y < editorConfig.screenRows; y++) {
-        if (y == editorConfig.screenRows / 3) {
+        if (y < editorConfig.numRows) {
+            int len = editorConfig.row.size;
+            if (len > editorConfig.screenCols) {
+                len = editorConfig.screenCols;
+            }
+
+            AppendBuffer_append(ab, editorConfig.row.chars, len);
+        } else if (y == editorConfig.screenRows / 3) {
             char welcome[80];
             int welcomeLen = snprintf(welcome, sizeof(welcome), "Memori editor -- version %s", MEMORI_VERSION);
 
@@ -372,6 +415,7 @@ void Editor_refreshScreen(void) {
 void Editor_init(void) {
     editorConfig.cx = 0;
     editorConfig.cy = 0;
+    editorConfig.numRows = 0;
 
     if (Terminal_getWindowSize(&editorConfig.screenRows, &editorConfig.screenCols) == -1) {
         Terminal_die("getWindowSize");
@@ -379,8 +423,14 @@ void Editor_init(void) {
 }
 
 int main(int argc, char **argv) {
+    if (argc < 2) {
+        printf("usage: %s <file>\n", argv[0]);
+        return 0;
+    }
+
     Terminal_enableRawMode();
     Editor_init();
+    Editor_open(argv[1]);
 
     while(1) {
         Editor_refreshScreen();
